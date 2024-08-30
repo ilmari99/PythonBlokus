@@ -3,7 +3,7 @@ import random
 import subprocess
 import multiprocessing
 import numpy as np
-from utils import parse_gtp_board_to_matrix, EmptyLock
+from .utils import parse_gtp_board_to_matrix, EmptyLock
 
 
 # Contains shared GTP sessions, that are only used for generating moves
@@ -31,7 +31,7 @@ def get_pentobi_move_session(level, starting_kwargs = {}):
     if starting_kwargs_hash not in _GTP_MOVE_SESSIONS:
         # We need to create a new session
         sess = PentobiGTP(**starting_kwargs)
-        print(f"Created new PentobiGTP args: {starting_kwargs}")
+        #print(f"Created new PentobiGTP args: {starting_kwargs}")
         _GTP_MOVE_SESSIONS[starting_kwargs_hash] = sess
     return _GTP_MOVE_SESSIONS[starting_kwargs_hash]
 
@@ -108,9 +108,10 @@ class PentobiGTP:
         
     def _find_pentobi_gtp_binary(self):
         # From the currect directory, search for the pentobi-gtp binary
-        current_dir = os.path.dirname(os.path.realpath(__file__))
+        current_dir = os.getcwd()
         for root, dirs, files in os.walk(current_dir):
             for file in files:
+                print(file)
                 if file == "pentobi-gtp":
                     pent_gtp = os.path.join(root, file)
                     #os.environ["PENTOBI_GTP"] = pent_gtp

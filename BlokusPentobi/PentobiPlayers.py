@@ -3,7 +3,7 @@ import random
 import warnings
 import numpy as np
 
-from PentobiGTP import PentobiGTP, get_pentobi_move_session
+from .PentobiGTP import PentobiGTP, get_pentobi_move_session
 
     
 class PentobiInternalPlayer:

@@ -1,17 +1,5 @@
-from collections import Counter
-import gc
-import json
-import multiprocessing
-import os
-import random
-import argparse
 import time
-from typing import Dict
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-import numpy as np
-from PentobiGTP import PentobiGTP
-from PentobiPlayers import PentobiInternalPlayer, PentobiExternalPlayer
-import argparse
+from .PentobiGTP import PentobiGTP
 
 def play_game(players, game, verbose=False, timeout=60):
     """
@@ -44,15 +32,4 @@ def play_game_with_args_and_save_result(players, game_kwargs, verbose=False, tim
     game.save_sgf(result_file)
     return game
 
-
-
-players = [PentobiInternalPlayer(pid=1, level=6, name="P1"),
-           PentobiInternalPlayer(pid=2, level=1, name="P2"),
-           PentobiInternalPlayer(pid=3, level=1, name="P3"),
-           PentobiInternalPlayer(pid=4, level=1, name="P4")
-           ]
-
-game_kwargs = {}
-
-play_game_with_args_and_save_result(players, game_kwargs, verbose=True, timeout=60, result_file="result.blksgf")
     
