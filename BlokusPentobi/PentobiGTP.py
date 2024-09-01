@@ -2,6 +2,7 @@ import os
 import random
 import subprocess
 import multiprocessing
+from typing import List
 import numpy as np
 from .utils import parse_gtp_board_to_matrix, EmptyLock
 
@@ -9,13 +10,20 @@ from .utils import parse_gtp_board_to_matrix, EmptyLock
 # Contains shared GTP sessions, that are only used for generating moves
 _GTP_MOVE_SESSIONS = {}
 
-def get_pentobi_move_session(level, starting_kwargs = {}):
-    """ Get a GTP session for generating moves with Pentobi.
+def get_pentobi_move_session(starting_kwargs = {}):
+    """ Get a shared PentobiGTP session, that is only used for generating moves.
+        Args:
+            level (int): The level of the GTP session. If you are using players that match the level of the session,
+            the players are faster.
+            starting_kwargs (dict, optional): Additional keyword arguments for the GTP session. Defaults to {}.
+
+        Returns:
+            PentobiGTP: The GTP session for generating moves with Pentobi.
     """
     global _GTP_MOVE_SESSIONS
-    starting_kwargs["level"] = level
     default_kwargs = {
         "gtp_path" : None,
+        "level" : 1,
         "book" : None,
         "config" : None,
         "game" : "classic",
@@ -36,7 +44,8 @@ def get_pentobi_move_session(level, starting_kwargs = {}):
     return _GTP_MOVE_SESSIONS[starting_kwargs_hash]
 
 class PentobiGTP:
-    """ Pentobi GTP interface wrapper, to play games with the Pentobi GTP engine.
+    """ Pentobi GTP interface wrapper.
+    This class is used to start a Pentobi GTP process, and communicate with it.
     See more here: https://github.com/enz/pentobi/blob/main/pentobi_gtp/Pentobi-GTP.md
     """
     def __init__(self,
@@ -51,6 +60,20 @@ class PentobiGTP:
                  noresign=True,
                  threads=1,
                  ):
+        """
+        Starts a Pentobi GTP process and communicate with it.
+        Args:
+            gtp_path (str, optional): The file path to the Pentobi GTP binary. If not found, it is searched from the current directory. Defaults to None.
+            book (str, optional): The file path to the opening book. Defaults to None.
+            config (str, optional): The file path to the configuration file. Defaults to None.
+            game (str, optional): The game mode. Only "classic" is supported. Defaults to "classic".
+            level (int, optional): The level of the AI. Must be between 1 and 9. Defaults to 1.
+            seed (int, optional): The seed for random number generation. Defaults to None.
+            showboard (bool, optional): Whether to show the board. Defaults to False.
+            nobook (bool, optional): Whether to disable the opening book. Defaults to False.
+            noresign (bool, optional): Whether to disable resigning. Defaults to True.
+            threads (int, optional): The number of threads to use. Defaults to 1.
+        """
         
         if game != "classic":
             raise NotImplementedError("Only classic game is supported")
@@ -106,7 +129,10 @@ class PentobiGTP:
         if self.process.poll() is not None:
             raise ValueError(f"Error:  GTP process failed to start with code {self.process.returncode}")
         
-    def _find_pentobi_gtp_binary(self):
+    def _find_pentobi_gtp_binary(self) -> str:
+        """
+        Finds the path to a file named 'pentobi-gtp'. Searches from the current directory.
+        """
         # From the currect directory, search for the pentobi-gtp binary
         current_dir = os.getcwd()
         for root, dirs, files in os.walk(current_dir):
@@ -119,15 +145,21 @@ class PentobiGTP:
         return None
     
     @property
-    def board_as_text(self):
+    def board_as_text(self) -> str:
+        """ The current board state as text
+        """
         return self.send_command("showboard")
     
     @property
-    def board(self):
+    def board(self) -> np.ndarray:
+        """ The current board state as a numpy matrix
+        """
         return parse_gtp_board_to_matrix(self.board_as_text)
     
     @property
-    def score(self):
+    def score(self) -> List[int]:
+        """ The current score of the game
+        """
         sc = self.send_command("final_score")
         #= 85 81 77 65
         sc = sc.split(" ")
@@ -137,21 +169,28 @@ class PentobiGTP:
         #    sc[winner_idx] += 50
         return sc
     
-    def load_sgf(self, sgf_file, lock_process=True):
+    def load_sgf(self, sgf_file, lock_process=True) -> None:
+        """ Load a .blksgf file as the current state of the game.
+        If you haven't already obtained the lock, then lock_process should be True, otherwise False.
+        """
         if not os.path.isfile(sgf_file):
             raise ValueError(f"File {sgf_file} not found")
         assert sgf_file.endswith(".blksgf"), "File must be a .blksgf file"
         self.send_command(f"loadsgf {sgf_file}", lock_process=lock_process)
         
-    def save_sgf(self, sgf_file, overwrite=True, lock_process=True):
+    def save_sgf(self, sgf_file, overwrite=True, lock_process=True) -> None:
+        """ Save the current state of the game to a .blksgf file.
+        If you haven't already obtained the lock, then lock_process should be True, otherwise False.
+        """
         if os.path.isfile(sgf_file) and not overwrite:
             raise ValueError(f"File {sgf_file} already exists")
         assert sgf_file.endswith(".blksgf"), "File must be a .blksgf file"
         self.send_command(f"savesgf {sgf_file}",lock_process=lock_process)
         
-    def set_to_state(self, other, lock_process=True):
-        """ Copy the state of the other PentobiGTP object to this one
-        by saving the state of the other object to a file, and loading it
+    def set_to_state(self, other, lock_process=True) -> None:
+        """ Copy the state of the other PentobiGTP instance to this one
+        by saving the state of the other object to a file, and loading it.
+        The other object is not modified.
         """
         temp_file_path = str(hash(str(other.board))) + str(random.randint(0, 2**32-1)) + ".blksgf"
         # Save the state of the other object to a file
@@ -164,9 +203,10 @@ class PentobiGTP:
         
         
         
-    def send_command(self, command, raise_errors=True, lock_process=True):
+    def send_command(self, command, raise_errors=True, lock_process=True) -> str:
         """
         Sends a command to the process and returns the response.
+        If you haven't already obtained the lock, then lock_process should be True, otherwise False.
         Args:
             command (str): The command to send to the process.
             raise_errors (bool): If True (default), raise an exception if the command fails.
@@ -174,6 +214,7 @@ class PentobiGTP:
             str: The response from the process.
         Raises:
             Exception: If the command fails and raise_errors is True.
+            
         """
         lock = self.lock if lock_process else EmptyLock()
         with lock:
@@ -186,7 +227,9 @@ class PentobiGTP:
                 raise Exception(f"Command '{command}' failed: {response}")
         return response
 
-    def _read_response(self):
+    def _read_response(self) -> str:
+        """ Read the response (txt) from the process.
+        """
         response = []
         while True:
             line = self.process.stdout.readline().strip()
@@ -195,7 +238,9 @@ class PentobiGTP:
             response.append(line)
         return '\n'.join(response)
     
-    def _check_pid_has_turn(self,pid):
+    def _check_pid_has_turn(self,pid) -> bool:
+        """ Check if the player has the turn.
+        """
         if pid != self.current_player:
             print(f"Error: Player {pid} is not the current player")
             return False
@@ -204,7 +249,11 @@ class PentobiGTP:
     def _change_player(self, pid):
         self.current_player = (pid % 4) + 1
     
-    def generate_internal_move(self, pid, lock_process=True):
+    def generate_internal_move(self, pid, lock_process=True) -> str:
+        """ Generate a move for the player with pid (THE PID MUST BE IN TURN).
+        If no move is possible, return 'pass'.
+        The move selection algorithm is based on the level of THIS GTP session.
+        """
         if not self._check_pid_has_turn(pid):
             raise ValueError(f"Player {pid} is not in turn!")
         out = self.send_command(f"reg_genmove {pid}", raise_errors=False, lock_process=lock_process)
@@ -214,7 +263,9 @@ class PentobiGTP:
         move = out.replace("= ", "")
         return move
     
-    def undo_last_move(self, lock_process=True):
+    def undo_last_move(self, lock_process=True) -> None:
+        """ Undo the last move.
+        """
         if len(self.previous_players) == 0:
             return
         out = self.send_command("undo", lock_process=lock_process)
@@ -222,8 +273,10 @@ class PentobiGTP:
             raise ValueError("Undo failed")
         self.current_player = self.previous_players.pop()
     
-    def play_move(self, pid, move, lock_process=True):
-        """ Move is in the format a1,b1,a2, etc.
+    def play_move(self, pid, move, lock_process=True) -> bool:
+        """ Play a move for the player with pid (Has to be in turn).
+        The move is specified as a string, e.g. 'a1,b1,b2'.
+        If the move is 'pass', the player passes the turn.
         """
         if not self._check_pid_has_turn(pid):
             raise ValueError(f"Player {pid} is not in turn!")
@@ -234,12 +287,16 @@ class PentobiGTP:
         return True
     
     def close(self, lock_process=True):
+        """ Close the Pentobi GTP process.
+        """
         self.send_command("quit", lock_process=lock_process)
         self.process.communicate()
         self.process.terminate()
         self.process.wait()
     
-    def get_legal_moves(self, pid, lock_process=True):
+    def get_legal_moves(self, pid, lock_process=True) -> List[str]:
+        """ Get a list of legal moves for the player with pid.
+        """
         out = self.send_command(f"all_legal {pid}", lock_process=lock_process)
         moves = out.replace("=", "").split("\n")
         moves = list(map(lambda mv : mv.strip(),filter(lambda x: x != "", moves)))
@@ -249,8 +306,8 @@ class PentobiGTP:
             moves = ["pass"]
         return moves
     
-    def is_game_finished(self, lock_process=True):
-        """ Check if the game is finished by checking if all players have no legal moves
+    def is_game_finished(self, lock_process=True) -> bool:
+        """ Check if the game is finished. The game is finished if no players have remaining legal moves.
         """
         for pid in range(1,5):
             moves = self.get_legal_moves(pid, lock_process=lock_process)

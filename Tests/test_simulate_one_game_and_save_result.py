@@ -11,7 +11,7 @@ players = [PentobiInternalPlayer(pid=1, level=6, name="P1"),
 game_kwargs_list = [{},
                     {"level":5},
                     {"threads":4, "level":5},
-                    {"nobook":True, "noresign":True},
+                    {"nobook":True, "noresign":False},
 ]
 times_taken = []
 for i, game_kwargs in enumerate(game_kwargs_list):

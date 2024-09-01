@@ -1,5 +1,6 @@
 import os
 import random
+from typing import List
 import warnings
 import numpy as np
 
@@ -15,6 +16,16 @@ class PentobiInternalPlayer:
                  move_selection_kwargs={},
                  name="PentobiInternalPlayer"
                  ):
+        """
+        Initializes a PentobiInternalPlayer object. This player can only play moves using a PentobiGTP session.
+        Args:
+            pid (int): The player ID.
+            pentobi_sess (PentobiGTP, optional): A separate PentobiGTP session to get moves from a session with different (level) settings. If None, then the player will use the session it is provided with. Defaults to None.
+            level (int, optional): The level of the player. Defaults to 1.
+            move_selection_strategy (str, optional): The move selection strategy. Can be "best", "random", or "epsilon_greedy". Defaults to "best".
+            move_selection_kwargs (dict, optional): Additional keyword arguments for the move selection strategy. Defaults to {}.
+            name (str, optional): The name of the player. Defaults to "PentobiInternalPlayer".
+        """
         self.pid = pid
         self.pentobi_sess : PentobiGTP = pentobi_sess
         # We can provide a separate PentobiGTP session to get moves from a session with different (level) settings
@@ -47,10 +58,13 @@ class PentobiInternalPlayer:
             return False
         return self.pentobi_sess.level != self.level
             
+
     def get_move_pentobi_sess(self, level):
+        """ Create a PentobiGTP session for getting the next move.
+        """
         if self.has_separate_pentobi_sess:
             print(f"Creating PentobiGTP session for player {self.pid} with level {level}")
-            return get_pentobi_move_session(level)
+            return get_pentobi_move_session({"level": level})
         return self.pentobi_sess
 
     def set_move_session_state(self, lock_process=True):
@@ -62,16 +76,19 @@ class PentobiInternalPlayer:
         self.move_pentobi_sess.set_to_state(self.pentobi_sess, lock_process=lock_process)
     
     def _make_move_with_pentobi_sess(self):
+        """ Get the next move from the get_move_pentobi_sess."""
         # We need to wait for the lock for the get_move_pentobi_sess
         # because it is shared.
         # We already have the lock for the pentobi_sess
         with self.move_pentobi_sess.lock:
-            # Once we have the lock, we set the state of the äget_move_pentobi_sessä to the state of the 'pentobi_sess'
+            # Once we have the lock, we set the state of the get_move_pentobi_sess to the state of the 'pentobi_sess'
             self.set_move_session_state(lock_process=False)
             mv = self.move_pentobi_sess.generate_internal_move(self.pid, lock_process=False)
         return mv
     
     def play_move(self):
+        """ Play a move using the pentobi_sess and the move_selection_strategy.
+        """
         if self.move_selection_strategy == "random":
             all_moves = self.pentobi_sess.get_legal_moves(self.pid)
             selected_move = random.choice(all_moves)
@@ -92,8 +109,6 @@ class PentobiInternalPlayer:
 
 
 class PentobiExternalPlayer:
-    """ An external player, that has to provide an evaluation of a board state, and then it can make a move.
-    """
     def __init__(self,
                  pid : int,
                  pentobi_sess : PentobiGTP,
@@ -101,6 +116,16 @@ class PentobiExternalPlayer:
                  move_selection_kwargs={},
                  name="PentobiExternalPlayer"
                  ):
+        """ Initializes a PentobiExternalPlayer object.
+        This player can play moves using simple external evaluation functions or heuristics.
+        A custom player can be created by inheriting from this class and implementing the evaluate_board method.
+        Args:
+            pid (int): The player ID.
+            pentobi_sess (PentobiGTP): A PentobiGTP session to play moves with.
+            move_selection_strategy (str, optional): The move selection strategy. Can be "best", "random", or "epsilon_greedy". Defaults to "best".
+            move_selection_kwargs (dict, optional): Additional keyword arguments for the move selection strategy. Defaults to {}.
+            name (str, optional): The name of the player. Defaults to "PentobiExternalPlayer".
+        """
         self.pid = pid
         self.pentobi_sess : PentobiGTP = pentobi_sess
         self.name = name
@@ -124,7 +149,9 @@ class PentobiExternalPlayer:
         raise NotImplementedError("evaluate_board method not implemented")
 
 
-    def calc_next_states(self, moves, lock_process=True):
+    def calc_next_states(self, moves, lock_process=True) -> List[np.ndarray]:
+        """ Calculate the next states of the board after playing each move in 'moves'.
+        """
         next_states = []
         for move in moves:
             if move == "pass":
@@ -137,13 +164,21 @@ class PentobiExternalPlayer:
 
 
     def _make_move_with_external_player(self, moves, lock_process=True):
-        next_states = self.calc_next_states(moves, lock_process=False)
+        """ Make a move using the external player evaluation function.
+        """
+        next_states = self.calc_next_states(moves, lock_process=lock_process)
         values = [self.evaluate_board(board) for board in next_states]
         best_move_idx = np.argmax(values)
         return moves[best_move_idx]
     
     
     def play_move(self):
+        """
+        Plays a move for the player.
+        This method selects a move from the available legal moves based on the move selection strategy specified during initialization.
+        The move can be selected randomly, using an epsilon-greedy strategy, or by choosing the best move.
+        """
+        
         # We can get the lock once here, and set lock_process = False for the rest of the calls
         with self.pentobi_sess.lock:
             all_moves = self.pentobi_sess.get_legal_moves(self.pid, lock_process=False)
@@ -160,4 +195,15 @@ class PentobiExternalPlayer:
                 selected_move = "pass"
             self.pentobi_sess.play_move(self.pid, selected_move, lock_process=False)
         return
+    
+class GreedyExternalPlayer(PentobiExternalPlayer):
+    """ A simple external player that plays the move that maximizes the number of pieces of the player
+    and minimizes the number of pieces of the opponent.
+    """
+    def evaluate_board(self, board):
+        """ Evaluate the board by counting the number of pieces of the player and the opponent.
+        """
+        player_count = np.sum(board == self.pid)
+        opponent_count = np.sum(board == 4 - self.pid)
+        return player_count - opponent_count
             

@@ -1,7 +1,11 @@
 import numpy as np
 
-def rotate_board_to_perspective(board, perspective_pid):
+def rotate_board_to_perspective(board, perspective_pid) -> np.ndarray:
     """ Rotate the board to the perspective of perspective_pid.
+    That means, the perspective_pid will be at the top left corner of the board.
+    Args:
+        board: np.array of shape (20, 20) where each element is the player id of the player that has a piece in that cell, and empty cells are -1.
+        perspective_pid: The player id of the player that we want to have the perspective of.
     """
     # First, we find the corner that has the perspective_pid
     top_left_pid = board[0,0]
@@ -23,8 +27,8 @@ def rotate_board_to_perspective(board, perspective_pid):
     #print(board)
     return board
 
-def normalize_board_to_perspective(board, perspective_pid):
-    """ Given a board, modify the so that the perspective_pid is always 0.
+def normalize_board_to_perspective(board, perspective_pid) -> np.ndarray:
+    """ Given a board, modify the so that the perspective_pid is always 0, the next player is 1, and so on.
     """
     # Add 4 - perspective_pid to each element of the board,
     # so that the perspective_pid is always 0, the next player is 1, and so on.
